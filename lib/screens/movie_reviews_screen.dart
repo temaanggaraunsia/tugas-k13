@@ -31,6 +31,17 @@ class _MovieReviewsScreenState extends State<MovieReviewsScreen> {
     });
   }
 
+  Future<void> _toggleLike(int reviewId, bool isLiked) async {
+    final success = await _apiService.toggleLike(reviewId, isLiked);
+    if (success) {
+      _loadReviews(); // Refresh setelah perubahan status like
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal mengubah status like')),
+      );
+    }
+  }
+
   void _deleteReview(int id) async {
     final success = await _apiService.deleteReview(id);
     if (success) {
@@ -58,8 +69,7 @@ class _MovieReviewsScreenState extends State<MovieReviewsScreen> {
                       AddEditReviewScreen(username: widget.username),
                 ),
               );
-              if (result == true)
-                _loadReviews(); // Refresh data setelah menambah review
+              if (result == true) _loadReviews(); // Refresh data
             },
           ),
         ],
@@ -90,6 +100,16 @@ class _MovieReviewsScreenState extends State<MovieReviewsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          icon: Icon(
+                            review['isLiked'] == 1
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: review['isLiked'] == 1 ? Colors.red : null,
+                          ),
+                          onPressed: () => _toggleLike(
+                              review['id'] as int, review['isLiked'] == 1),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.edit),
                           onPressed: () async {
                             final result = await Navigator.push(
@@ -101,8 +121,7 @@ class _MovieReviewsScreenState extends State<MovieReviewsScreen> {
                                 ),
                               ),
                             );
-                            if (result == true)
-                              _loadReviews(); // Refresh data setelah edit
+                            if (result == true) _loadReviews();
                           },
                         ),
                         IconButton(

@@ -31,6 +31,7 @@ class ApiService {
             rating INTEGER,
             comment TEXT,
             photo TEXT,
+            isLiked INTEGER DEFAULT 0, -- Kolom baru untuk menyimpan status like
             FOREIGN KEY (username) REFERENCES users (username)
           )
         ''');
@@ -91,6 +92,7 @@ class ApiService {
         'reviews',
         where: 'username = ?',
         whereArgs: [username],
+        orderBy: 'id ASC', // Urutkan berdasarkan id
       );
     } catch (e) {
       print('Error in getReviews: $e');
@@ -121,6 +123,7 @@ class ApiService {
           'rating': rating,
           'comment': comment,
           'photo': photo,
+          'isLiked': 0, // Default status like adalah tidak disukai
         },
       );
       return true;
@@ -159,6 +162,22 @@ class ApiService {
       return rowsUpdated > 0;
     } catch (e) {
       print('Error in updateReview: $e');
+      return false;
+    }
+  }
+
+  Future<bool> toggleLike(int id, bool isLiked) async {
+    try {
+      final db = await database;
+      final rowsUpdated = await db.update(
+        'reviews',
+        {'isLiked': isLiked ? 0 : 1}, // Toggle nilai isLiked
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return rowsUpdated > 0;
+    } catch (e) {
+      print('Error in toggleLike: $e');
       return false;
     }
   }
