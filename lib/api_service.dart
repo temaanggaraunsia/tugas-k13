@@ -1,97 +1,179 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+import 'dart:io';
 
 class ApiService {
-  static const String baseUrl = 'https://crudcrud.com/api/7f27486f21e94a7fad510553b2801221';
+  static Database? _database;
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDatabase();
+    return _database!;
+  }
+
+  Future<Database> _initDatabase() async {
+    final dbPath = await getDatabasesPath();
+    return openDatabase(
+      join(dbPath, 'app_database.db'),
+      onCreate: (db, version) {
+        db.execute('''
+          CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+          )
+        ''');
+        db.execute('''
+          CREATE TABLE reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            title TEXT,
+            rating INTEGER,
+            comment TEXT,
+            photo TEXT,
+            FOREIGN KEY (username) REFERENCES users (username)
+          )
+        ''');
+      },
+      version: 1,
+    );
+  }
 
   Future<bool> registerUser(String username, String password) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/users'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
+      final db = await database;
+      await db.insert(
+        'users',
+        {'username': username, 'password': password},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
-      return response.statusCode == 201;
+      return true;
     } catch (e) {
+      print('Error in registerUser: $e');
       return false;
     }
   }
 
   Future<bool> checkUsernameExists(String username) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/users'));
-      if (response.statusCode == 200) {
-        final List users = jsonDecode(response.body);
-        return users.any((user) => user['username'] == username);
-      }
-      return false;
+      final db = await database;
+      final result = await db.query(
+        'users',
+        where: 'username = ?',
+        whereArgs: [username],
+      );
+      return result.isNotEmpty;
     } catch (e) {
+      print('Error in checkUsernameExists: $e');
       return false;
     }
   }
 
   Future<bool> loginUser(String username, String password) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/users'));
-      if (response.statusCode == 200) {
-        final List users = jsonDecode(response.body);
-        return users.any((user) => user['username'] == username && user['password'] == password);
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Future<List<dynamic>> getReviews(String username) async {
-    try {
-      final response = await http.get(Uri.parse('$baseUrl/reviews'));
-      if (response.statusCode == 200) {
-        final List reviews = jsonDecode(response.body);
-        return reviews.where((review) => review['username'] == username).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  Future<bool> addReview(String username, String title, int rating, String comment) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/reviews'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'title': title, 'rating': rating, 'comment': comment}),
+      final db = await database;
+      final result = await db.query(
+        'users',
+        where: 'username = ? AND password = ?',
+        whereArgs: [username, password],
       );
-      return response.statusCode == 201;
+      return result.isNotEmpty;
     } catch (e) {
-      print('Error adding review: $e');
+      print('Error in loginUser: $e');
       return false;
     }
   }
 
-  Future<bool> updateReview(String id, String title, int rating, String comment) async {
+  Future<List<Map<String, dynamic>>> getReviews(String username) async {
     try {
-      final response = await http.put(
-        Uri.parse('$baseUrl/reviews/$id'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'title': title, 'rating': rating, 'comment': comment}),
+      final db = await database;
+      return await db.query(
+        'reviews',
+        where: 'username = ?',
+        whereArgs: [username],
       );
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-      return response.statusCode == 200;
     } catch (e) {
-      print('Error updating review: $e');
+      print('Error in getReviews: $e');
+      return [];
+    }
+  }
+
+  Future<bool> addReview(String username, String title, int rating,
+      String comment, String? photo) async {
+    try {
+      // Validasi data
+      if (title.isEmpty || rating < 1 || rating > 10 || comment.isEmpty) {
+        print('Invalid data for addReview');
+        return false;
+      }
+
+      if (photo != null && !File(photo).existsSync()) {
+        print('Photo file not found: $photo');
+        return false;
+      }
+
+      final db = await database;
+      await db.insert(
+        'reviews',
+        {
+          'username': username,
+          'title': title,
+          'rating': rating,
+          'comment': comment,
+          'photo': photo,
+        },
+      );
+      return true;
+    } catch (e) {
+      print('Error in addReview: $e');
       return false;
     }
   }
 
- Future<bool> deleteReview(String id) async {
+  Future<bool> updateReview(
+      int id, String title, int rating, String comment, String? photo) async {
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/reviews/$id'));
-      return response.statusCode == 200;
+      // Validasi data
+      if (title.isEmpty || rating < 1 || rating > 10 || comment.isEmpty) {
+        print('Invalid data for updateReview');
+        return false;
+      }
+
+      if (photo != null && !File(photo).existsSync()) {
+        print('Photo file not found: $photo');
+        return false;
+      }
+
+      final db = await database;
+      final rowsUpdated = await db.update(
+        'reviews',
+        {
+          'title': title,
+          'rating': rating,
+          'comment': comment,
+          'photo': photo,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return rowsUpdated > 0;
     } catch (e) {
-      print('Error deleting review: $e');
+      print('Error in updateReview: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteReview(int id) async {
+    try {
+      final db = await database;
+      final rowsDeleted = await db.delete(
+        'reviews',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return rowsDeleted > 0;
+    } catch (e) {
+      print('Error in deleteReview: $e');
       return false;
     }
   }
